@@ -13,7 +13,7 @@ add_executable(portable_bill main.cpp)
 add_subdirectory(modules/pico-onewire)
  
 # Link the Project to an extra library (pico_stdlib)
-target_link_libraries(portable_bill pico_stdlib pico_one_wire hardware_gpio hardware_i2c)
+target_link_libraries(portable_bill pico_stdlib pico_one_wire hardware_gpio hardware_i2c hardware_adc)
  
 # Initalise the SDK
 pico_sdk_init()

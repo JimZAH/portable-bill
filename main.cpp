@@ -2,6 +2,7 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
+#include "hardware/adc.h"
 #include "modules/pico-onewire/api/one_wire.h"
 
 // Thanks to https://github.com/ParicBat/rpi-pico-i2c-display-lib for LCD pointers.
@@ -9,11 +10,26 @@
 // LCD I2C address
 #define lcd_addr 0x27
 
+// Supply voltage
+#define supply 26
+
+// Fan
+#define fan_supply 22
+
+// Active lamp
+#define active_lamp 25
+
 // Temp sensor
 #define sensor 15
 
 #define f_start 30.0
 #define f_stop 28.0
+
+const int pins[3][2]{
+    {supply, GPIO_IN},
+    {fan_supply, GPIO_OUT},
+    {active_lamp, GPIO_OUT}
+};
 
 // LCD control
 const uint8_t LCD_CLEAR = 0x01;
@@ -94,7 +110,7 @@ void lcd_init() {
 }
 
 void lcd_write(char val) {
-    lcd_send_byte(val, 1, 1);
+    lcd_send_byte(val, LCD_TEXT, 1);
 }
 
 void lcd_print(char *s) {
@@ -105,42 +121,60 @@ void lcd_print(char *s) {
 
 int main() {
     char wbuff[5];
-    bool fan = false;
-    gpio_init(sensor);
-    stdio_init_all();
+    char bbuff[9];
+    bool fan = true;
+
+    for (int i = 0; i < sizeof(pins)/sizeof(pins[0]); i++){
+        gpio_init(pins[i][0]);
+    }
+
+    for (int i = 0; i < sizeof(pins)/sizeof(pins[0]); i++){
+        gpio_set_dir(pins[i][0], pins[i][1]);
+    }
+
+    //stdio_init_all();
     i2c_init(i2c_default, 100 * 1000);
     gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
     gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+
+    adc_init();
+    adc_gpio_init(supply);
+    adc_select_input(0);
+
     One_wire one_wire(sensor);
     one_wire.init();
     rom_address_t address{};
     lcd_init();
-    lcd_setCursor(1,0);
-    lcd_print("Batt: 50v");
-    lcd_setCursor(0,8);
-    lcd_print("FAN: OFF");
-    lcd_setCursor(0,0);
     sleep_ms(500);
-    
+
     while (true) {
         one_wire.single_device_read_rom(address);
         one_wire.convert_temperature(address, true, false);
-        printf("Temperature: %3.1foC\n", one_wire.temperature(address));
         float ftemp = one_wire.temperature(address);
+        uint16_t voltage = adc_read();
+        voltage = voltage*0.8/55;
         if (ftemp > f_start && !fan){
             lcd_setCursor(0,8);
             lcd_print("FAN: ON ");
+            gpio_put(fan_supply, true);
+            gpio_put(active_lamp, true);
             fan = true;
         } else if (ftemp < f_stop && fan){
             lcd_setCursor(0,8);
             lcd_print("FAN: OFF");
+            gpio_put(fan_supply, false);
+            gpio_put(active_lamp, false);
             fan = false;
         }
         sprintf(wbuff, "%3.1fC", one_wire.temperature(address));
+        sprintf(bbuff, (voltage < 10) ? "Batt: %dV " : "Batt: %dV", voltage);
+
         lcd_setCursor(0,0);
         lcd_print(wbuff);
+        lcd_setCursor(1,0);
+        lcd_print(bbuff);
     }
     return 0;
 }

@@ -1,0 +1,3 @@
+[submodule "modules/pico-onewire"]
+	path = modules/pico-onewire
+	url = https://github.com/ParicBat/rpi-pico-i2c-display-lib

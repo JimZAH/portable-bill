@@ -61,6 +61,14 @@ typedef struct Config{
     float fan_off;
 }settings;
 
+typedef struct Status{
+    bool fan;
+    bool high_warning;
+    bool low_warning;
+    uint64_t samples;
+    float temp;
+}status;
+
 void i2c_write_byte(uint8_t val) {
     i2c_write_blocking(i2c_default, lcd_addr, &val, 1, false);
 }
@@ -128,7 +136,6 @@ void lcd_print(char *s, settings *cfg) {
 int main() {
     char wbuff[5];
     char bbuff[9];
-    bool fan = true;
 
     settings set={
         .backlight = true,
@@ -136,7 +143,16 @@ int main() {
         .fan_off = f_stop
     };
 
+    status state={
+        .fan = false,
+        .high_warning = false,
+        .low_warning = false,
+        .samples = 0,
+        .temp = 0.0
+    };
+
     settings *mysettings = &set;
+    status *mystatus = &state;
 
 
     for (int i = 0; i < sizeof(pins)/sizeof(pins[0]); i++){
@@ -165,25 +181,26 @@ int main() {
     sleep_ms(500);
 
     while (true) {
+        mystatus->samples++;
         one_wire.single_device_read_rom(address);
         one_wire.convert_temperature(address, true, false);
-        float ftemp = one_wire.temperature(address);
+        mystatus->temp = one_wire.temperature(address);
         uint16_t voltage = adc_read();
         voltage = voltage*0.8/55;
-        if (ftemp > mysettings->fan_on && !fan){
+        if (mystatus->temp > mysettings->fan_on && !mystatus->fan){
             lcd_setCursor(0,8);
             lcd_print("FAN: ON ", mysettings);
             gpio_put(fan_supply, true);
             gpio_put(active_lamp, true);
-            fan = true;
-        } else if (ftemp < mysettings->fan_off && fan){
+            mystatus->fan = true;
+        } else if (mystatus->temp < mysettings->fan_off && mystatus->fan){
             lcd_setCursor(0,8);
             lcd_print("FAN: OFF", mysettings);
             gpio_put(fan_supply, false);
             gpio_put(active_lamp, false);
-            fan = false;
+            mystatus->fan = false;
         }
-        sprintf(wbuff, "%3.1fC", one_wire.temperature(address));
+        sprintf(wbuff, "%3.1fC", mystatus->temp);
         sprintf(bbuff, (voltage < 10) ? "Batt: %dV " : "Batt: %dV", voltage);
 
         lcd_setCursor(0,0);

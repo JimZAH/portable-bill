@@ -55,6 +55,12 @@ const uint8_t LCD_DISPLAYON = 0x04;
 // LCD type
 const uint8_t LCD_2LINE = 0x08;
 
+typedef struct Config{
+    bool backlight;
+    float fan_on;
+    float fan_off;
+}settings;
+
 void i2c_write_byte(uint8_t val) {
     i2c_write_blocking(i2c_default, lcd_addr, &val, 1, false);
 }
@@ -109,13 +115,13 @@ void lcd_init() {
     lcd_send_byte(LCD_CLEAR, LCD_COMMAND, 1);
 }
 
-void lcd_write(char val) {
-    lcd_send_byte(val, LCD_TEXT, 1);
+void lcd_write(char val, settings *cfg) {
+    lcd_send_byte(val, LCD_TEXT, cfg->backlight);
 }
 
-void lcd_print(char *s) {
+void lcd_print(char *s, settings *cfg) {
     while (*s) {
-        lcd_write(*s++);
+        lcd_write(*s++, cfg);
     }
 }
 
@@ -123,6 +129,15 @@ int main() {
     char wbuff[5];
     char bbuff[9];
     bool fan = true;
+
+    settings set={
+        .backlight = true,
+        .fan_on = f_start,
+        .fan_off = f_stop
+    };
+
+    settings *mysettings = &set;
+
 
     for (int i = 0; i < sizeof(pins)/sizeof(pins[0]); i++){
         gpio_init(pins[i][0]);
@@ -155,15 +170,15 @@ int main() {
         float ftemp = one_wire.temperature(address);
         uint16_t voltage = adc_read();
         voltage = voltage*0.8/55;
-        if (ftemp > f_start && !fan){
+        if (ftemp > mysettings->fan_on && !fan){
             lcd_setCursor(0,8);
-            lcd_print("FAN: ON ");
+            lcd_print("FAN: ON ", mysettings);
             gpio_put(fan_supply, true);
             gpio_put(active_lamp, true);
             fan = true;
-        } else if (ftemp < f_stop && fan){
+        } else if (ftemp < mysettings->fan_off && fan){
             lcd_setCursor(0,8);
-            lcd_print("FAN: OFF");
+            lcd_print("FAN: OFF", mysettings);
             gpio_put(fan_supply, false);
             gpio_put(active_lamp, false);
             fan = false;
@@ -172,9 +187,9 @@ int main() {
         sprintf(bbuff, (voltage < 10) ? "Batt: %dV " : "Batt: %dV", voltage);
 
         lcd_setCursor(0,0);
-        lcd_print(wbuff);
+        lcd_print(wbuff, mysettings);
         lcd_setCursor(1,0);
-        lcd_print(bbuff);
+        lcd_print(bbuff, mysettings);
     }
     return 0;
 }

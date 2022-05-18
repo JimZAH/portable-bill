@@ -169,6 +169,7 @@ int main() {
     gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
     gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+    gpio_put(fan_supply, true);
 
     adc_init();
     adc_gpio_init(supply);
@@ -190,13 +191,13 @@ int main() {
         if (mystatus->temp > mysettings->fan_on && !mystatus->fan){
             lcd_setCursor(0,8);
             lcd_print("FAN: ON ", mysettings);
-            gpio_put(fan_supply, true);
+            gpio_put(fan_supply, false);
             gpio_put(active_lamp, true);
             mystatus->fan = true;
         } else if (mystatus->temp < mysettings->fan_off && mystatus->fan){
             lcd_setCursor(0,8);
             lcd_print("FAN: OFF", mysettings);
-            gpio_put(fan_supply, false);
+            gpio_put(fan_supply, true);
             gpio_put(active_lamp, false);
             mystatus->fan = false;
         }

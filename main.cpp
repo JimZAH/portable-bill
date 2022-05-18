@@ -2,10 +2,25 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
+#include "hardware/irq.h"
 #include "hardware/adc.h"
 #include "modules/pico-onewire/api/one_wire.h"
 
+// Buttons
+
+// Select
+#define select 14
+
+// Down
+#define down 13
+
+// Up
+#define up 12
+
+/////////////////
+
 // Thanks to https://github.com/ParicBat/rpi-pico-i2c-display-lib for LCD pointers.
+
 
 // LCD I2C address
 #define lcd_addr 0x27
@@ -25,10 +40,13 @@
 #define f_start 30.0
 #define f_stop 28.0
 
-const int pins[3][2]{
+const int pins[6][2]{
     {supply, GPIO_IN},
     {fan_supply, GPIO_OUT},
-    {active_lamp, GPIO_OUT}
+    {active_lamp, GPIO_OUT},
+    {select, GPIO_IN},
+    {down, GPIO_IN},
+    {up, GPIO_IN}
 };
 
 // LCD control
@@ -54,6 +72,17 @@ const uint8_t LCD_DISPLAYON = 0x04;
 
 // LCD type
 const uint8_t LCD_2LINE = 0x08;
+
+char* menus[5] = {
+    "MENU: BACKLIGHT ",
+    "MENU: H TEMP    ",
+    "MENU: L TEMP    ",
+    "MENU: OVERRIDE  ",
+    "MENU: WARNING   "
+};
+
+uint8_t bselect = 0;
+uint32_t debounce = 0;
 
 typedef struct Config{
     bool backlight;
@@ -133,7 +162,26 @@ void lcd_print(char *s, settings *cfg) {
     }
 }
 
+void buttons(uint gpio, uint32_t events){
+    if (time_us_64() - debounce < 300000UL){
+        return;
+    }
+    switch (gpio){
+        case select:
+        bselect = 0x1;
+        break;
+        case down:
+        bselect = 0x2;
+        break;
+        case up:
+        bselect = 0x4;
+        break;
+    }
+    debounce = time_us_64();
+}
+
 int main() {
+    debounce = time_us_64();
     char wbuff[5];
     char bbuff[9];
 
@@ -163,6 +211,10 @@ int main() {
         gpio_set_dir(pins[i][0], pins[i][1]);
     }
 
+    for (int i = 3; i < sizeof(pins)/sizeof(pins[0]); i++){
+        gpio_pull_up(pins[i][0]);
+    }
+
     //stdio_init_all();
     i2c_init(i2c_default, 100 * 1000);
     gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
@@ -174,6 +226,10 @@ int main() {
     adc_init();
     adc_gpio_init(supply);
     adc_select_input(0);
+
+    gpio_set_irq_enabled_with_callback(select, GPIO_IRQ_EDGE_FALL, true, &buttons);
+    gpio_set_irq_enabled(down, GPIO_IRQ_EDGE_FALL, true);
+    gpio_set_irq_enabled(up, GPIO_IRQ_EDGE_FALL, true);
 
     One_wire one_wire(sensor);
     one_wire.init();
@@ -208,6 +264,48 @@ int main() {
         lcd_print(wbuff, mysettings);
         lcd_setCursor(1,0);
         lcd_print(bbuff, mysettings);
+
+        if (bselect == 0x1){
+            uint8_t mselect = 0;
+            bool EXIT = false;
+            bool toggle = false;
+            lcd_send_byte(LCD_CLEAR, LCD_COMMAND, 1);
+            lcd_setCursor(0,0);
+            lcd_print(menus[mselect], mysettings);
+            lcd_setCursor(1,0);
+            while (!EXIT){
+                switch(bselect){
+                    case 0x1:
+                    mselect++;
+                    lcd_setCursor(0,0);
+                    lcd_print(menus[mselect], mysettings);
+                    if (mselect > 4)
+                        mselect = 0;
+                    bselect = 0;
+                    break;
+                    case 0x04:
+                    lcd_setCursor(1,12);
+                    if (toggle){
+                        lcd_print("ON ", mysettings);
+                        toggle = false;
+                    } else {
+                        lcd_print("OFF", mysettings);
+                        toggle = true;
+                    }
+                    bselect = 0;
+                    break;
+                    default:
+                    break;
+                }
+
+                if (bselect==2){
+                    lcd_send_byte(LCD_CLEAR, LCD_COMMAND, 1);
+                    EXIT = true;
+                    bselect = 0;
+                }
+            }
+
+        }
     }
     return 0;
 }
